@@ -40,6 +40,8 @@ let lastGroupCheck      = new Date();
 let reconnectAttempts   = 0;
 let isReady             = false;
 let sock                = null;
+let groupsLoaded        = false;
+let pendingHistory      = [];   // buffer history that arrives before groups are loaded
 
 // Suppress Baileys' verbose pino output
 const silentLogger = pino({ level: 'silent' });
@@ -209,6 +211,14 @@ async function onConnected() {
 
     const stats = await getStats();
     console.log(`[Bot] DB: ${stats.total} requests (${stats.open} open, ${stats.matched} matched)\n`);
+
+    // Flush any history that arrived before groups were loaded
+    groupsLoaded = true;
+    if (pendingHistory.length > 0) {
+        console.log(`[Bot] Flushing ${pendingHistory.length} buffered history message(s)...`);
+        const toProcess = pendingHistory.splice(0);
+        await processHistoryMessages(toProcess);
+    }
 }
 
 // ── connect ────────────────────────────────────────────────────────────────
@@ -222,7 +232,7 @@ async function connect() {
         auth: state,
         logger: silentLogger,
         printQRInTerminal: false,   // we handle QR ourselves
-        syncFullHistory: false,     // only recent history
+        syncFullHistory: true,      // needed for messaging-history.set to fire reliably
         markOnlineOnConnect: false  // don't show online status
     });
 
@@ -243,6 +253,7 @@ async function connect() {
 
         if (connection === 'close') {
             isReady = false;
+            groupsLoaded = false;
             const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
             const loggedOut = reason === DisconnectReason.loggedOut;
 
@@ -265,10 +276,16 @@ async function connect() {
         }
     });
 
-    // History backfill: fires when WhatsApp sends message history on connect
+    // History backfill: fires when WhatsApp sends message history on connect.
+    // May arrive before onConnected() finishes loading groups — buffer if so.
     sock.ev.on('messaging-history.set', async ({ messages }) => {
-        if (monitoredGroupIds.size > 0) {
-            await processHistoryMessages(messages || []);
+        const msgs = messages || [];
+        console.log(`[Bot] messaging-history.set: ${msgs.length} message(s) received`);
+        if (!groupsLoaded) {
+            pendingHistory.push(...msgs);
+            console.log(`[Bot] Groups not loaded yet — buffered ${pendingHistory.length} total`);
+        } else {
+            await processHistoryMessages(msgs);
         }
     });
 
