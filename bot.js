@@ -232,7 +232,7 @@ async function connect() {
         auth: state,
         logger: silentLogger,
         printQRInTerminal: false,   // we handle QR ourselves
-        syncFullHistory: false,     // true can trigger 401 on new devices; we buffer instead
+        syncFullHistory: true,      // request recent history on connect (stable session, buffer handles race)
         markOnlineOnConnect: false  // don't show online status
     });
 
