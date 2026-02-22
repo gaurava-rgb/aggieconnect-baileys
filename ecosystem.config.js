@@ -7,7 +7,8 @@ module.exports = {
             max_restarts: 10,
             autorestart: true,
             watch: false,
-            env: { NODE_ENV: 'production' }
+            env: { NODE_ENV: 'production' },
+            log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
         },
         {
             name: 'aggie-baileys-dash',
@@ -16,7 +17,8 @@ module.exports = {
             max_restarts: 10,
             autorestart: true,
             watch: false,
-            env: { NODE_ENV: 'production' }
+            env: { NODE_ENV: 'production' },
+            log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
         },
         {
             name: 'aggie-baileys-monitor',
@@ -25,7 +27,8 @@ module.exports = {
             max_restarts: 10,
             autorestart: true,
             watch: false,
-            env: { NODE_ENV: 'production' }
+            env: { NODE_ENV: 'production' },
+            log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
         }
     ]
 };

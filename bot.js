@@ -12,8 +12,10 @@ const {
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
-    isJidGroup
+    isJidGroup,
+    isLidUser
 } = require('@whiskeysockets/baileys');
+const fs = require('fs');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -36,6 +38,7 @@ const MAX_RECONNECT = 5;
 const monitoredGroupIds = new Set();
 const processedMessages = new Set();
 const groupNameCache    = new Map();
+const lidToPhone        = new Map();    // maps @lid user IDs to real phone numbers
 let lastGroupCheck      = new Date();
 let reconnectAttempts   = 0;
 let isReady             = false;
@@ -76,6 +79,12 @@ async function getGroupName(jid) {
     }
 }
 
+function resolveSenderNumber(jid) {
+    const raw = jid.split('@')[0];
+    if (!isLidUser(jid)) return raw;              // already a real phone number
+    return lidToPhone.get(raw) || raw;             // try cache, fall back to lid
+}
+
 // ── core message handler ───────────────────────────────────────────────────
 
 async function processOneMessage(msg, groupName, isBackfill = false) {
@@ -86,8 +95,8 @@ async function processOneMessage(msg, groupName, isBackfill = false) {
     const body = extractBody(msg);
     if (!body || body.length < 3) return;
 
-    const senderJid  = msg.key.participant || msg.key.remoteJid;
-    const senderNumber = senderJid.split('@')[0];
+    const senderJid    = msg.key.participant || msg.key.remoteJid;
+    const senderNumber = resolveSenderNumber(senderJid);
     const senderName   = msg.pushName || 'Unknown';
 
     const parsed = await parseMessage(body, senderName);
@@ -238,6 +247,26 @@ async function connect() {
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Build lid→phone mapping from contact updates sent by WhatsApp
+    sock.ev.on('contacts.upsert', (contacts) => {
+        for (const c of contacts) {
+            // c.id is the primary JID (could be @s.whatsapp.net or @lid)
+            // c.lid is the linked-device JID (if present)
+            const id = c.id || '';
+            const lid = c.lid || '';
+            const phoneJid = [id, lid].find(j => j.endsWith('@s.whatsapp.net'));
+            const lidJid   = [id, lid].find(j => j.endsWith('@lid'));
+            if (phoneJid && lidJid) {
+                const phone = phoneJid.split('@')[0];
+                const lidNum = lidJid.split('@')[0];
+                lidToPhone.set(lidNum, phone);
+            }
+        }
+        if (lidToPhone.size > 0) {
+            console.log(`[Bot] Contact cache: ${lidToPhone.size} lid→phone mapping(s)`);
+        }
+    });
+
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -260,7 +289,8 @@ async function connect() {
             console.log(`\n[Bot] Disconnected (reason: ${reason})`);
 
             if (loggedOut) {
-                console.error('[Bot] Logged out. Delete .baileys_auth folder and restart.');
+                console.error('[Bot] Logged out — clearing stale auth for fresh QR on next start.');
+                fs.rmSync('.baileys_auth', { recursive: true, force: true });
                 process.exit(1);
             }
 
