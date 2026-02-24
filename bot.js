@@ -40,6 +40,7 @@ const processedMessages = new Set();
 const groupNameCache    = new Map();
 const lidToPhone        = new Map();    // maps @lid user IDs to real phone numbers
 let lastGroupCheck      = new Date();
+let lastGroupFetch      = 0;       // timestamp of last groupFetchAllParticipating call
 let reconnectAttempts   = 0;
 let isReady             = false;
 let sock                = null;
@@ -182,12 +183,18 @@ async function onConnected() {
     isReady = true;
     console.log('\n[Bot] Connected to WhatsApp! (Baileys)');
 
-    // Fetch all groups and seed monitored_groups table
+    // Fetch all groups and seed monitored_groups table (max once per 5 min)
     let allGroups = {};
-    try {
-        allGroups = await sock.groupFetchAllParticipating();
-    } catch (err) {
-        console.error('[Bot] Could not fetch groups:', err.message);
+    const now = Date.now();
+    if (now - lastGroupFetch > 5 * 60 * 1000) {
+        try {
+            allGroups = await sock.groupFetchAllParticipating();
+            lastGroupFetch = now;
+        } catch (err) {
+            console.error('[Bot] Could not fetch groups:', err.message);
+        }
+    } else {
+        console.log('[Bot] Skipping group fetch (cooldown — reconnected too soon)');
     }
 
     // Populate name cache
