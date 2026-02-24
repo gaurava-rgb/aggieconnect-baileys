@@ -378,9 +378,8 @@ setInterval(() => {
 
 // ── signals ────────────────────────────────────────────────────────────────
 
-process.on('SIGINT', async () => {
+process.on('SIGINT', () => {
     console.log('\n[Bot] Shutting down...');
-    await sock?.logout().catch(() => {});
     process.exit(0);
 });
 
